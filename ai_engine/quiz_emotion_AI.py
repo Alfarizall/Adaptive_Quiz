@@ -119,17 +119,8 @@ def update_camera():
         alpha = 0.1
         emotion_numeric = emotion_value[emotion_text]
 
-        ema_emotion_value = (
-            alpha * emotion_numeric +
-            (1 - alpha) * ema_emotion_value
-        )
+        ema_emotion_value = alpha * emotion_numeric + (1 - alpha) * ema_emotion_value
 
-        # Mapping EMA → difficulty target
-        # Netral (4) sebagai baseline
-        delta = (ema_emotion_value - 4.0) * 0.1
-
-        difficulty = np.clip(difficulty + delta, 1.0, 5.0)
-        level = int(round(difficulty))
 
         cv2.rectangle(frame, (x, y), (x+w, y+h), (0,255,0), 2)
     
@@ -158,6 +149,21 @@ def update_graph():
 # =====================
 # QUIZ LOGIC
 # =====================
+def predict_difficulty(prev_difficulty):
+    total = correct_streak + wrong_streak
+    accuracy = correct_streak / total if total > 0 else 0
+
+    X = np.array([[
+        ema_emotion_value,
+        accuracy,
+        correct_streak,
+        wrong_streak,
+        prev_difficulty
+    ]])
+
+    pred = difficulty_model.predict(X, verbose=0)[0][0]
+    return float(np.clip(pred, 1.0, 5.0))
+
 def next_question():
     global current_answer
     q, current_answer = generate_question()
@@ -168,41 +174,33 @@ def submit_answer():
     global score, wrong_streak, correct_streak
     global difficulty, level
 
-    prev_difficulty = level
-
     try:
         user_answer = int(answer_entry.get())
     except:
         messagebox.showwarning("Error", "Masukkan angka!")
         return
 
+    # Evaluasi jawaban
     if user_answer == current_answer:
         score += 10
         correct_streak += 1
         wrong_streak = 0
-
-        # ⬆️ NAIK KESULITAN JIKA BENAR BERTURUT
-        if correct_streak >= 3:
-            difficulty = min(difficulty + 1.0, 5.0)
-            level = int(round(difficulty))
-            correct_streak = 0
-
     else:
         wrong_streak += 1
         correct_streak = 0
 
-        # ⬇️ TURUN KESULITAN JIKA SALAH BERTURUT
-        if wrong_streak >= 3:
-            difficulty = max(difficulty - 1.0, 1.0)
-            level = int(round(difficulty))
-            wrong_streak = 0
-    
-    next_difficulty = level
-    log_difficulty_sample(prev_difficulty, next_difficulty)
+    # 🔮 AI PREDICT DIFFICULTY
+    prev_difficulty = difficulty
+    difficulty = predict_difficulty(prev_difficulty)
+    level = int(round(difficulty))
 
-    score_label.config(text=f"Skor: {score}")
+    score_label.config(
+        text=f"Skor: {score} | Level: {level}"
+    )
+
     answer_entry.delete(0, tk.END)
     next_question()
+    log_difficulty_sample(prev_difficulty, difficulty)
 
 def finish_quiz():
     global running
