@@ -15,6 +15,7 @@ import csv
 # LOAD MODEL
 # =====================
 emotion_model = load_model("emotion_model.h5", compile=False)
+difficulty_model = load_model("difficulty_predictor.h5", compile=False)
 
 emotion_labels = {
     0: "Marah",
@@ -54,9 +55,10 @@ emotion_history = []
 emotion_counter = Counter()
 wrong_streak = 0
 correct_streak = 0
-
-ema_emotion = 4.0   
-alpha = 0.08       
+total_questions = 0
+correct_answers = 0
+ema_emotion_value = 4.0 
+     
 
 cap = cv2.VideoCapture(0)
 
@@ -90,7 +92,7 @@ def generate_question():
 # CAMERA LOOP
 # =====================
 def update_camera():
-    global difficulty, level, ema_emotion
+    global difficulty, level, ema_emotion_value
 
     ret, frame = cap.read()
     if not ret:
@@ -114,20 +116,24 @@ def update_camera():
         emotion_counter[emotion_text] += 1
         emotion_history.append(emotion_text)
 
-        emotion_num = emotion_value[emotion_text]
-        # EMA update
-        ema_emotion = alpha * emotion_num + (1 - alpha) * ema_emotion
+        alpha = 0.1
+        emotion_numeric = emotion_value[emotion_text]
+
+        ema_emotion_value = (
+            alpha * emotion_numeric +
+            (1 - alpha) * ema_emotion_value
+        )
 
         # Mapping EMA → difficulty target
         # Netral (4) sebagai baseline
-        delta = (ema_emotion - 4.0) * 0.1
+        delta = (ema_emotion_value - 4.0) * 0.1
 
         difficulty = np.clip(difficulty + delta, 1.0, 5.0)
         level = int(round(difficulty))
 
         cv2.rectangle(frame, (x, y), (x+w, y+h), (0,255,0), 2)
     
-    ema_label.config(text=f"EMA Emosi: {ema_emotion:.2f}")
+    ema_label.config(text=f"EMA Emosi: {ema_emotion_value:.2f}")
 
     cv2.putText(frame, emotion_text, (20,40),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
@@ -199,7 +205,10 @@ def finish_quiz():
     running = True
 
     cap.release()
-    cv2.destroyAllWindows()
+    try:
+        cv2.destroyAllWindows()
+    except:
+        pass
 
     plt.close('all')
 
